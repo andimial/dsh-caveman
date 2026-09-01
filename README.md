@@ -1,5 +1,11 @@
 # dsh-caveman
 
+## 兼容的 Harness 版本
+
+- **已验证支持**：DeepSeek Harness `0.1.0-rc.6`（web profile）。
+- **最新版 `0.1.2-alpha.3`**：适配计划进行中，暂无确切完成时间。升级前请先备份你的 DSH 安装。
+
+
 让 DeepSeek Harness 里的 AI **少说废话**：像聪明的穴居人一样极简输出，技术信息完整保留。
 
 > **本机实测（DeepSeek V4-Flash，8 任务 × 5 档，2026-08-17）**：
