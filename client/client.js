@@ -63,9 +63,12 @@ window.__ModuleLoader__.load({
 
       function toggle() {
         if (value === null) return
+        var previous = value
         var next = !value.enabled
         set({ enabled: next, level: value.level })  // optimistic
-        writeState({ enabled: next }).then(set).catch(function () {})
+        // Revert on failure: a rejected write used to leave the button lying
+        // about the state (the host answers 403 when the guard refuses).
+        writeState({ enabled: next }).then(set).catch(function () { set(previous) })
       }
 
       var enabled = value !== null && value.enabled
@@ -101,6 +104,9 @@ window.__ModuleLoader__.load({
       var busy = React.useState(false)
       var isBusy = busy[0]
       var setBusy = busy[1]
+      var failure = React.useState(null)
+      var errorText = failure[0]
+      var setErrorText = failure[1]
 
       React.useEffect(function () {
         fetchState().then(set).catch(function () {})
@@ -108,11 +114,14 @@ window.__ModuleLoader__.load({
 
       function apply(patch) {
         setBusy(true)
+        setErrorText(null)
         writeState(patch).then(function (next) {
           set(next)
           setBusy(false)
-        }).catch(function () {
+        }).catch(function (error) {
           setBusy(false)
+          // Never swallow a rejected write: silence here reads as 「点了没反应」.
+          setErrorText(error && error.message ? error.message : String(error))
         })
       }
 
@@ -178,6 +187,11 @@ window.__ModuleLoader__.load({
             'span',
             { style: { fontSize: '12px', color: 'var(--dsw-color-text-secondary, #57606a)' } },
             '开启后注入 system prompt 精简规则；也可在对话里用 /caveman-on、/caveman-off、/caveman-level 切换。修改立即生效，无需重启。'
+          ),
+          errorText === null ? null : React.createElement(
+            'span',
+            { style: { fontSize: '12px', color: 'var(--dsw-color-danger-fg, #cf222e)' } },
+            '写入失败：' + errorText
           )
         )
       )

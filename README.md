@@ -123,7 +123,11 @@ dsh 当前版本下，第三方插件**无法使用官方 settings 机制**在�
 | 路由 | 方法 | 说明 |
 |---|---|---|
 | `/caveman/status` | GET | 读取当前开关状态与档位 |
-| `/caveman/state` | POST | 写入开关/档位；**同源校验**（Origin 必须匹配 Host）防 CSRF |
+| `/caveman/state` | POST | 写入开关/档位；**写保护**见下 |
+
+**写保护（两模式，桌面端 403 回归的修复）**：宿主有 `connection` 服务（`@deepseek-ai/dsh-client-connection`）时，写入交给平台的 `Connection.requestRejection`——Host/Origin 围栏失配 403、缺签名 cookie 401、放行返回 undefined；该服务缺席（纯 CLI 组合）时才回退到 `Origin === Host` 的同源校验。
+
+不能只做同源校验：**桌面端渲染进程的页面 origin 是 `dsh-app://app`**，Electron 主进程转发插件请求到宿主 loopback 时会**删掉 `origin`/`host`/`cookie`/`sec-fetch-site`** 并重新挂上宿主自己的签名 cookie（见 dsh-desktop `forwardWebRequest`），于是 `Origin === Host` 必然为假 → 每次点击都 403 `untrusted origin`，而 browser half 又把失败 catch 掉，表现为「点了没反应」。取 `connection` 必须用 **getter 每次请求现读**：该服务由异步 apply 定义、晚于路由挂载完成，构造时读一次会永远拿到 undefined。
 
 UI 侧经 slots 注入两个挂载点：
 
@@ -149,6 +153,13 @@ dsh plugin --profile web add "github:wjxn13/dsh-caveman"
 ```bash
 npm install
 node scripts/build.mjs    # 构建 host，验证源码可编译
+npm test                  # 8 项：路由写保护 + 构建产物端到端（含桌面端转发形状）
 ```
+
+- `test/routes-guard.test.mjs`：真实路由模块 + 真实 HTTP server，锁桌面端转发形状（无 `origin` + 宿主 cookie）被放行、缺 cookie 401、跨站 403、无 `connection` 组合回退同源校验。
+- `test/bundle-mount.test.mjs`：直接 `import lib/index.js`（随包发布的产物），桩宿主服务 + 临时 HOME，证明桌面端形状的写入能落盘到 `state.json` 且跨站仍被拒。
+- `npm run repro:desktop-toggle`：对**运行中的宿主**（默认 `http://127.0.0.1:19387`，可 `CAVEMAN_BASE` 覆盖）跑一次现场复现，两种请求形状各发一次写请求并断言 200，结束时恢复原状态；RED 退出码 1。
+
+> 现场脚本打的是进程内已加载的旧代码：改完源码要**同步到 profile 的 `node_modules/dsh-caveman` 并重启**（或插件页「重启」），否则仍会 403。
 
 真实功能验证：装进隔离测试实例，发消息说「少说废话」或执行 `/caveman-status`，确认命令注册、状态文件 `~/.dsh-caveman/state.json` 写入、输出变精简；再在设置页「输出精简」分区点开关/档位，确认 `GET /caveman/status`、`POST /caveman/state` 正常工作且与命令状态同步。

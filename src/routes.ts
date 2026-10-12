@@ -8,15 +8,36 @@
  * The escape hatch — proven by dsh-market — is registering plain HTTP routes on
  * the host webServer and fetching them from the browser half directly.
  *
- * All writes check same-origin (Origin header must match Host) so a cross-site
- * page cannot flip the toggle through the user's browser (CSRF).
+ * WHY THE WRITE GUARD IS TWO-MODE (desktop 403 regression):
+ * The Desktop composition runs its renderer on the `dsh-app://app` origin, and
+ * the Electron main process forwards every plugin HTTP request to the host
+ * webServer with the `origin`, `host`, `cookie` and `sec-fetch-site` headers
+ * DELETED and the host's own signed cookie re-attached (dsh-desktop
+ * `forwardWebRequest`). A bare Origin===Host check therefore rejects every
+ * Desktop click with 403 — the toggle renders and does nothing.
+ *
+ * So writes are admitted by the host's own `connection` service
+ * (@deepseek-ai/dsh-client-connection `Connection.requestRejection`: 403 on a
+ * failed Host/Origin fence, 401 without a valid signed cookie, undefined when
+ * admitted) whenever it exists — that verdict lets the Desktop's forwarded
+ * requests through while still refusing cross-site pages. Without the service
+ * (CLI-only compositions) the classic Origin===Host CSRF check applies.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { LEVELS, PLUGIN_NAME, DEFAULT_LEVEL, type CavemanLevel } from './constants.ts'
 
 interface CavemanConfig {
   enabled: boolean
   level: CavemanLevel
+}
+
+/**
+ * Minimal structural type of the host `connection` service face this module
+ * uses (dsh-client-connection `Connection.requestRejection`).
+ */
+export interface ConnectionAdmission {
+  requestRejection(request: { headers: IncomingMessage['headers'] }): number | undefined
 }
 
 /** True when the request originates from the served web app (Origin === Host). */
@@ -28,6 +49,43 @@ function sameOrigin(request: { headers: { origin?: string, host?: string } }): b
     return new URL(origin).host === host
   } catch {
     return false
+  }
+}
+
+/**
+ * Shared write guard: POST method + request admission.
+ *
+ * Takes a **getter** for {@link ConnectionAdmission}: the host composition
+ * defines `connection` from an async apply, so it settles *after* these routes
+ * mount. Reading it once at construction would freeze `undefined` forever and
+ * silently downgrade every request to the Origin fallback — the exact Desktop
+ * 403 regression this guard exists to prevent.
+ *
+ * @returns false when the request must not proceed; the error response is sent.
+ */
+export function createWriteGuard(getConnection: () => ConnectionAdmission | undefined):
+(request: IncomingMessage, response: ServerResponse) => boolean {
+  return (request, response) => {
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: 'method not allowed; use POST' })
+      return false
+    }
+    const connection = getConnection()
+    if (connection !== undefined) {
+      const rejection = connection.requestRejection(request)
+      if (rejection !== undefined) {
+        sendJson(response, rejection, {
+          error: rejection === 401 ? 'authentication required' : 'untrusted request',
+        })
+        return false
+      }
+      return true
+    }
+    if (!sameOrigin(request)) {
+      sendJson(response, 403, { error: 'untrusted origin' })
+      return false
+    }
+    return true
   }
 }
 
@@ -80,6 +138,8 @@ export function mountCavemanRoutes(
     return () => {}
   }
 
+  const guardWrite = createWriteGuard(() => ctx.get('connection') as ConnectionAdmission | undefined)
+
   const disposers = [
     webServer.register({
       kind: 'exact',
@@ -92,16 +152,8 @@ export function mountCavemanRoutes(
       kind: 'exact',
       path: '/caveman/state',
       handler: async (request, response) => {
-        if (request.method !== 'POST') {
-          sendJson(response, 405, { error: 'method not allowed; use POST' })
-          return
-        }
-        // Writes are same-origin only: a malicious page on another origin
-        // must not be able to toggle the switch through the user's browser.
-        if (!sameOrigin(request)) {
-          sendJson(response, 403, { error: 'untrusted origin' })
-          return
-        }
+        // POST only, and only from the served app (see createWriteGuard).
+        if (!guardWrite(request, response)) return
         const body = (await readJsonBody(request)) as
           | { enabled?: unknown, level?: unknown }
           | undefined

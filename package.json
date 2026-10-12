@@ -27,7 +27,9 @@
     }
   },
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "test": "node --test",
+    "repro:desktop-toggle": "node scripts/repro-desktop-toggle.mjs"
   },
   "keywords": [
     "dsh",
