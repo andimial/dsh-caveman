@@ -12,4 +12,4 @@ Issues 记录在本仓库的 GitHub Issues，用 `gh` CLI 读写。See `docs/age
 
 ### Domain docs
 
-single-context——一个仓库共用一份根目录 `CONTEXT.md`，架构决定放 `docs/adr/`。See `docs/agents/domain.md`.
+single-context——一个仓库共用一份根目录 `GLOSSARY.md`，架构决定放 `docs/adr/`。See `docs/agents/domain.md`.
