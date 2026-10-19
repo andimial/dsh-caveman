@@ -63,7 +63,7 @@ async function startBundleHost() {
       body(ctx)
       return () => {}
     },
-    systemPrompt: { section: () => ({ dispose: () => {} }) },
+    systemPrompt: { context: () => ({ dispose: () => {} }) },
     commands: { register: (command) => { commands.push(command); return () => {} } },
   }
 

@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { DEFAULT_LEVEL, LEVELS, PLUGIN_NAME, SECTION_ORDER, type CavemanLevel } from './constants.ts'
+import { CONTEXT_ORDER, DEFAULT_LEVEL, LEVELS, PLUGIN_NAME, type CavemanLevel } from './constants.ts'
 import { mountCavemanRoutes } from './routes.ts'
 
 export const name = PLUGIN_NAME
@@ -69,11 +69,15 @@ export function apply(ctx: Context): void {
   }
 
   ctx.effect(function* () {
-    // One lifetime section; text resolves per assembly from the live state.
-    yield ctx.systemPrompt.section({
+    // Runtime context, not a prompt section: on host 0.2.1-rc.2 a deployment
+    // plugin's section is dropped from PTC-mode prompts, while context still
+    // reaches the model. required=true keeps it past runtime-context suppression.
+    // Empty text (disabled) is filtered out by the host, so no fixture prose.
+    yield ctx.systemPrompt.context({
       name: 'caveman',
-      order: SECTION_ORDER,
+      order: CONTEXT_ORDER,
       text: () => (state.enabled ? LEVELS[state.level] : ''),
+      required: true,
     })
 
     yield ctx.commands.register({

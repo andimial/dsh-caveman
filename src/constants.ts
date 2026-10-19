@@ -7,8 +7,11 @@
 /** Plugin identity. */
 export const PLUGIN_NAME = 'dsh-caveman'
 
-/** System prompt section order (after persona=0, before tool guidance=100–199). */
-export const SECTION_ORDER = 50
+/**
+ * Runtime-context order. This is the host's CONTEXT_ORDERS space, where
+ * WORKING_DIRECTORY=100 and every platform contribution sits above it.
+ */
+export const CONTEXT_ORDER = 50
 
 /** Output-terseness rule text per level, injected into the system prompt. */
 export const LEVELS = {
